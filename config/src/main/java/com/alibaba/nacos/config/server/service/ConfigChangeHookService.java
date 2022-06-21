@@ -16,10 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Service
 public class ConfigChangeHookService {
@@ -67,15 +64,12 @@ public class ConfigChangeHookService {
      * 对listener进行轮询，负载均衡
      */
     private boolean trigRemoteHooks(String dataId, String group, String tenant, ConfigChangeHookRequest request) {
-        String key = GroupKey.getKeyTenant (dataId, group, tenant);
-        Set<String> listeners = configChangeListenContext.getListeners (key);
-        if (listeners == null || listeners.size () == 0) {
+        List<String> list = getClientsByListener (dataId, group, tenant);
+
+        if (list == null || list.size () == 0) {
             System.out.println ("没有listener");
             return true;
         }
-
-        List<String> list = new ArrayList<> (listeners);
-        Collections.shuffle (list);
 
         for (int i = 0; i < RETRY_TIMES; i++) {
             for (String client : list) {
@@ -109,89 +103,16 @@ public class ConfigChangeHookService {
         return false;
     }
 
-//    class TriggerHookTask implements Runnable {
-//
-//
-//        ConfigChangeHookRequest request;
-//
-//        int maxRetryTimes;
-//
-//        int tryTimes = 0;
-//
-//        String clientIp;
-//
-//        String appName;
-//
-//        Iterator<String> clients;
-//
-//
-//        public TriggerHookTask(ConfigChangeHookRequest request, int maxRetryTimes,
-//                               String clientIp, String appName, Connection connection, Set<String> clients) {
-//            this.request = request;
-//            this.maxRetryTimes = maxRetryTimes;
-//            this.clientIp = clientIp;
-//            this.appName = appName;
-//
-//            //打乱
-//            List<String> list = new ArrayList<> (clients);
-//            Collections.shuffle (list);
-//            this.clients = list.iterator ();
-//        }
-//
-//        public boolean isOverTimes() {
-//            return maxRetryTimes > 0 && this.tryTimes >= maxRetryTimes;
-//        }
-//
-//        @Override
-//        public void run() {
-//            tryTimes++;
-//            try {
-//                connection.asyncRequest (request, new AbstractRequestCallBack (t) {
-//
-//                    @Override
-//                    public Executor getExecutor() {
-//                        return executor;
-//                    }
-//
-//                    @Override
-//                    public void onResponse(Response response) {
-//                        if (response.isSuccess ()) {
-//                            requestCallBack.onSuccess ();
-//                        } else {
-//                            requestCallBack.onFail (new NacosException (response.getErrorCode (), response.getMessage ()));
-//                        }
-//                    }
-//
-//                    @Override
-//                    public void onException(Throwable e) {
-//                        requestCallBack.onFail (e);
-//                    }
-//                });
-//            } catch (ConnectionAlreadyClosedException e) {
-//                connectionManager.unregister (connectionId);
-//                requestCallBack.onSuccess ();
-//            } catch (Exception e) {
-//                Loggers.REMOTE_DIGEST
-//                        .error ("error to send push response to connectionId ={},push response={}", connectionId,
-//                                request, e);
-//                requestCallBack.onFail (e);
-//            }
-//
-//            rpcPushService.pushWithCallback (connectionId, request, new AbstractPushCallBack (3000L) {
-//                @Override
-//                public void onSuccess() {
-//
-//                }
-//
-//                @Override
-//                public void onFail(Throwable e) {
-//                    Loggers.REMOTE_PUSH.warn ("Push fail", e);
-//                    push (RpcConfigChangeNotifier.RpcPushTask.this);
-//                }
-//
-//            }, ConfigExecutor.getClientConfigNotifierServiceExecutor ());
-//
-//        }
-//
-//    }
+    //两种实现，基于listener还是基于所以的注册的服务
+    private List<String> getClientsByListener(String dataId, String group, String tenant) {
+        String key = GroupKey.getKeyTenant (dataId, group, tenant);
+        Set<String> listeners = configChangeListenContext.getListeners (key);
+        if (listeners == null)
+            return null;
+
+        List<String> list = new ArrayList<> (listeners);
+        Collections.shuffle (list);
+        return list;
+    }
+
 }

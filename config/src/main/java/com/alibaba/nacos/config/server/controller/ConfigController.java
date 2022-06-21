@@ -181,7 +181,15 @@ public class ConfigController {
         String encryptedDataKey = pair.getFirst();
         configInfo.setEncryptedDataKey(encryptedDataKey);
 
-        if(!hookService.trigRemoteHooks (dataId,group,tenant,content,null,type,ConfigChangeHookRequest.ChangeType.MODIFY)){
+        ConfigAllInfo info = persistService.findConfigAllInfo (dataId, group, tenant);
+        ConfigChangeHookRequest.ChangeType changeType;
+        if(info!=null){
+            changeType = ConfigChangeHookRequest.ChangeType.MODIFY;
+        }else{
+            changeType = ConfigChangeHookRequest.ChangeType.PUBLISH_RAW;
+        }
+
+        if(!hookService.trigRemoteHooks (dataId,group,tenant,content,null,type,changeType)){
 //            throw new NacosException (0,"invalid content!");
             System.out.println ("invalid content!");
             return false;
