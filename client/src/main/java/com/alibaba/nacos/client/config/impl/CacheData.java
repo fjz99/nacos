@@ -447,7 +447,7 @@ public class CacheData {
         return LocalEncryptedDataKeyProcessor.getEncryptDataKeySnapshot(name, dataId, group, tenant);
     }
 
-    private static class ManagerListenerWrap {
+    private static class ManagerListenerWrap {//listener包装类
 
         boolean inNotifying = false;
 

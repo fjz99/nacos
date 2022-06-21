@@ -30,139 +30,162 @@ import org.mockito.junit.MockitoJUnitRunner;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 @RunWith(MockitoJUnitRunner.class)
 public class RpcClientFactoryTest {
-    
+
     static Field clientMapField;
-    
+
     @Mock
     RpcClient rpcClient;
-    
+
     @BeforeClass
     public static void setUpBeforeClass() throws NoSuchFieldException, IllegalAccessException {
-        clientMapField = RpcClientFactory.class.getDeclaredField("CLIENT_MAP");
-        clientMapField.setAccessible(true);
-        Field modifiersField1 = Field.class.getDeclaredField("modifiers");
-        modifiersField1.setAccessible(true);
-        modifiersField1.setInt(clientMapField, clientMapField.getModifiers() & ~Modifier.FINAL);
+        clientMapField = RpcClientFactory.class.getDeclaredField ("CLIENT_MAP");
+        clientMapField.setAccessible (true);
+        Field modifiersField1 = Field.class.getDeclaredField ("modifiers");
+        modifiersField1.setAccessible (true);
+        modifiersField1.setInt (clientMapField, clientMapField.getModifiers () & ~Modifier.FINAL);
     }
-    
+
     @After
     public void tearDown() throws IllegalAccessException {
-        clientMapField.set(null, new ConcurrentHashMap<>());
+        clientMapField.set (null, new ConcurrentHashMap<> ());
     }
-    
+
     @Test
     public void testGetAllClientEntries() throws IllegalAccessException {
-        Assert.assertTrue(RpcClientFactory.getAllClientEntries().isEmpty());
-        
-        clientMapField.set(null, Collections.singletonMap("testClient", rpcClient));
-        Assert.assertEquals(1, RpcClientFactory.getAllClientEntries().size());
+        Assert.assertTrue (RpcClientFactory.getAllClientEntries ().isEmpty ());
+
+        clientMapField.set (null, Collections.singletonMap ("testClient", rpcClient));
+        Assert.assertEquals (1, RpcClientFactory.getAllClientEntries ().size ());
     }
-    
+
     @Test
     public void testDestroyClientWhenClientExistThenRemoveAndShutDownRpcClient()
             throws IllegalAccessException, NacosException {
-        clientMapField.set(null, new ConcurrentHashMap<>(Collections.singletonMap("testClient", rpcClient)));
-        
-        RpcClientFactory.destroyClient("testClient");
-        
-        Assert.assertTrue(RpcClientFactory.getAllClientEntries().isEmpty());
-        verify(rpcClient).shutdown();
+        clientMapField.set (null, new ConcurrentHashMap<> (Collections.singletonMap ("testClient", rpcClient)));
+
+        RpcClientFactory.destroyClient ("testClient");
+
+        Assert.assertTrue (RpcClientFactory.getAllClientEntries ().isEmpty ());
+        verify (rpcClient).shutdown ();
     }
-    
+
     @Test
     public void testDestroyClientWhenClientNotExistThenDoNothing() throws IllegalAccessException, NacosException {
-        clientMapField.set(null, new ConcurrentHashMap<>(Collections.singletonMap("testClient", rpcClient)));
-        
-        RpcClientFactory.destroyClient("notExistClientName");
-        
-        Map.Entry<String, RpcClient> element = CollectionUtils.getOnlyElement(RpcClientFactory.getAllClientEntries());
-        Assert.assertEquals("testClient", element.getKey());
-        Assert.assertEquals(rpcClient, element.getValue());
-        verify(rpcClient, times(0)).shutdown();
+        clientMapField.set (null, new ConcurrentHashMap<> (Collections.singletonMap ("testClient", rpcClient)));
+
+        RpcClientFactory.destroyClient ("notExistClientName");
+
+        Map.Entry<String, RpcClient> element = CollectionUtils.getOnlyElement (RpcClientFactory.getAllClientEntries ());
+        Assert.assertEquals ("testClient", element.getKey ());
+        Assert.assertEquals (rpcClient, element.getValue ());
+        verify (rpcClient, times (0)).shutdown ();
     }
-    
+
     @Test
     public void testGetClient() throws IllegalAccessException {
         // may be null
-        Assert.assertNull(RpcClientFactory.getClient("notExistClientName"));
-        
-        clientMapField.set(null, new ConcurrentHashMap<>(Collections.singletonMap("testClient", rpcClient)));
-        Assert.assertEquals(rpcClient, RpcClientFactory.getClient("testClient"));
+        Assert.assertNull (RpcClientFactory.getClient ("notExistClientName"));
+
+        clientMapField.set (null, new ConcurrentHashMap<> (Collections.singletonMap ("testClient", rpcClient)));
+        Assert.assertEquals (rpcClient, RpcClientFactory.getClient ("testClient"));
     }
-    
+
     @Test
-    public void testCreateClientWhenNotCreatedThenCreate() {
+    public void testCreateClientWhenNotCreatedThenCreate() throws NacosException {
         RpcClient client = RpcClientFactory
-                .createClient("testClient", ConnectionType.GRPC, Collections.singletonMap("labelKey", "labelValue"));
-        
-        Assert.assertEquals(Collections.singletonMap("labelKey", "labelValue"), client.labels);
-        Assert.assertEquals(ConnectionType.GRPC, client.getConnectionType());
-        Assert.assertEquals("testClient", CollectionUtils.getOnlyElement(RpcClientFactory.getAllClientEntries()).getKey());
+                .createClient ("testClient", ConnectionType.GRPC, Collections.singletonMap ("labelKey", "labelValue"));
+        Assert.assertEquals (Collections.singletonMap ("labelKey", "labelValue"), client.labels);
+        Assert.assertEquals (ConnectionType.GRPC, client.getConnectionType ());
+        Assert.assertEquals ("testClient", CollectionUtils.getOnlyElement (RpcClientFactory.getAllClientEntries ()).getKey ());
     }
-    
+
+    @Test
+    public void testCreateClientWhenNotCreatedThenCreate22() throws Exception {
+        RpcClient client = RpcClientFactory
+                .createClient ("testClient", ConnectionType.GRPC, Collections.singletonMap ("labelKey", "labelValue"));
+        final List<String> list = Collections.singletonList ("localhost:8888");
+        client.serverListFactory (new ServerListFactory () {
+            @Override
+            public String genNextServer() {
+                return list.get (0);
+            }
+
+            @Override
+            public String getCurrentServer() {
+                return list.get (0);
+            }
+
+            @Override
+            public List<String> getServerList() {
+                return list;
+            }
+        });
+        RpcClient.ServerInfo serverInfo = new RpcClient.ServerInfo ("localhost", 8848);
+        System.out.println (client.connectToServer (serverInfo));
+    }
+
     @Test
     public void testCreateClientWhenAlreadyCreatedThenNotCreateAgain() {
         RpcClient client1 = RpcClientFactory
-                .createClient("testClient", ConnectionType.GRPC, Collections.singletonMap("labelKey", "labelValue"));
+                .createClient ("testClient", ConnectionType.GRPC, Collections.singletonMap ("labelKey", "labelValue"));
         RpcClient client2 = RpcClientFactory
-                .createClient("testClient", ConnectionType.GRPC, Collections.singletonMap("labelKey", "labelValue"));
-        
-        Assert.assertEquals(client1, client2);
-        Assert.assertEquals(1, RpcClientFactory.getAllClientEntries().size());
+                .createClient ("testClient", ConnectionType.GRPC, Collections.singletonMap ("labelKey", "labelValue"));
+
+        Assert.assertEquals (client1, client2);
+        Assert.assertEquals (1, RpcClientFactory.getAllClientEntries ().size ());
     }
-    
+
     @Test(expected = Exception.class)
     public void testCreatedClientWhenConnectionTypeNotMappingThenThrowException() {
-        RpcClientFactory.createClient("testClient", mock(ConnectionType.class),
-                Collections.singletonMap("labelKey", "labelValue"));
+        RpcClientFactory.createClient ("testClient", mock (ConnectionType.class),
+                Collections.singletonMap ("labelKey", "labelValue"));
     }
-    
+
     @Test
     public void testCreateClusterClientWhenNotCreatedThenCreate() {
-        RpcClient client = RpcClientFactory.createClusterClient(
-                "testClient", 
+        RpcClient client = RpcClientFactory.createClusterClient (
+                "testClient",
                 ConnectionType.GRPC,
-                Collections.singletonMap("labelKey", "labelValue")
+                Collections.singletonMap ("labelKey", "labelValue")
         );
-        
-        Assert.assertEquals(Collections.singletonMap("labelKey", "labelValue"), client.labels);
-        Assert.assertEquals(ConnectionType.GRPC, client.getConnectionType());
-        Assert.assertEquals("testClient", CollectionUtils.getOnlyElement(RpcClientFactory.getAllClientEntries()).getKey());
+
+        Assert.assertEquals (Collections.singletonMap ("labelKey", "labelValue"), client.labels);
+        Assert.assertEquals (ConnectionType.GRPC, client.getConnectionType ());
+        Assert.assertEquals ("testClient", CollectionUtils.getOnlyElement (RpcClientFactory.getAllClientEntries ()).getKey ());
     }
-    
+
     @Test
     public void testCreateClusterClientWhenAlreadyCreatedThenNotCreateAgain() {
-        RpcClient client1 = RpcClientFactory.createClusterClient(
-                "testClient", 
+        RpcClient client1 = RpcClientFactory.createClusterClient (
+                "testClient",
                 ConnectionType.GRPC,
-                Collections.singletonMap("labelKey", "labelValue")
+                Collections.singletonMap ("labelKey", "labelValue")
         );
-        RpcClient client2 = RpcClientFactory.createClusterClient(
-                "testClient", 
+        RpcClient client2 = RpcClientFactory.createClusterClient (
+                "testClient",
                 ConnectionType.GRPC,
-                Collections.singletonMap("labelKey", "labelValue")
+                Collections.singletonMap ("labelKey", "labelValue")
         );
-        
-        Assert.assertEquals(client1, client2);
-        Assert.assertEquals(1, RpcClientFactory.getAllClientEntries().size());
+
+        Assert.assertEquals (client1, client2);
+        Assert.assertEquals (1, RpcClientFactory.getAllClientEntries ().size ());
     }
-    
+
     @Test(expected = Exception.class)
     public void testCreatedClusterClientWhenConnectionTypeNotMappingThenThrowException() {
-        RpcClientFactory.createClusterClient(
-                "testClient", 
-                mock(ConnectionType.class),
-                Collections.singletonMap("labelKey", "labelValue")
+        RpcClientFactory.createClusterClient (
+                "testClient",
+                mock (ConnectionType.class),
+                Collections.singletonMap ("labelKey", "labelValue")
         );
     }
-    
+
 }

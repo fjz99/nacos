@@ -19,20 +19,11 @@ package com.alibaba.nacos.client.config.impl;
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.ability.ClientAbilities;
 import com.alibaba.nacos.api.common.Constants;
+import com.alibaba.nacos.api.config.ConfigChangeHookChain;
 import com.alibaba.nacos.api.config.ConfigType;
 import com.alibaba.nacos.api.config.listener.Listener;
-import com.alibaba.nacos.api.config.remote.request.ClientConfigMetricRequest;
-import com.alibaba.nacos.api.config.remote.request.ConfigBatchListenRequest;
-import com.alibaba.nacos.api.config.remote.request.ConfigChangeNotifyRequest;
-import com.alibaba.nacos.api.config.remote.request.ConfigPublishRequest;
-import com.alibaba.nacos.api.config.remote.request.ConfigQueryRequest;
-import com.alibaba.nacos.api.config.remote.request.ConfigRemoveRequest;
-import com.alibaba.nacos.api.config.remote.response.ClientConfigMetricResponse;
-import com.alibaba.nacos.api.config.remote.response.ConfigChangeBatchListenResponse;
-import com.alibaba.nacos.api.config.remote.response.ConfigChangeNotifyResponse;
-import com.alibaba.nacos.api.config.remote.response.ConfigPublishResponse;
-import com.alibaba.nacos.api.config.remote.response.ConfigQueryResponse;
-import com.alibaba.nacos.api.config.remote.response.ConfigRemoveResponse;
+import com.alibaba.nacos.api.config.remote.request.*;
+import com.alibaba.nacos.api.config.remote.response.*;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.remote.RemoteConstants;
 import com.alibaba.nacos.api.remote.request.Request;
@@ -428,7 +419,7 @@ public class ClientWorker implements Closeable {
         }
     }
 
-    private void refreshContentAndCheck(CacheData cacheData, boolean notify) {
+    private void refreshContentAndCheck(CacheData cacheData, boolean notify) {//第一次获取不会notify
         try {
             //同步请求config
             ConfigResponse response = getServerConfig(cacheData.dataId, cacheData.group, cacheData.tenant, 3000L,
@@ -592,17 +583,19 @@ public class ClientWorker implements Closeable {
              * Register Config Change /Config ReSync Handler
              */
             rpcClientInner.registerServerRequestHandler((request) -> {
-                if (request instanceof ConfigChangeNotifyRequest) {
-                    ConfigChangeNotifyRequest configChangeNotifyRequest = (ConfigChangeNotifyRequest) request;
+                if (request instanceof ConfigChangeHookRequest){
+                    return ConfigChangeHookChain.INSTANCE.doFilter ((ConfigChangeHookRequest) request);
+                } else if (request instanceof ConfigChangeNotifyRequest) {//处理config 变更
+                    ConfigChangeNotifyRequest configChangeNotifyRequest = (ConfigChangeNotifyRequest) request;//只会发布变更的group和dataId
                     LOGGER.info("[{}] [server-push] config changed. dataId={}, group={},tenant={}",
                             rpcClientInner.getName(), configChangeNotifyRequest.getDataId(),
                             configChangeNotifyRequest.getGroup(), configChangeNotifyRequest.getTenant());
                     String groupKey = GroupKey
                             .getKeyTenant(configChangeNotifyRequest.getDataId(), configChangeNotifyRequest.getGroup(),
-                                    configChangeNotifyRequest.getTenant());
+                                    configChangeNotifyRequest.getTenant());//group key = a+b
 
                     CacheData cacheData = cacheMap.get().get(groupKey);
-                    //如果有cache date，那就设置一下，cache data像是一个传递媒介
+                    //如果有cache date，那就需要处理监听器！，监听器都在cacheData中！
                     if (cacheData != null) {
                         synchronized (cacheData) {
                             cacheData.getLastModifiedTs().set(System.currentTimeMillis());
@@ -690,7 +683,7 @@ public class ClientWorker implements Closeable {
             executor.schedule(() -> {
                 while (!executor.isShutdown() && !executor.isTerminated()) {
                     try {
-                        listenExecutebell.poll(5L, TimeUnit.SECONDS);
+                        listenExecutebell.poll(5L, TimeUnit.SECONDS);//这相当于5s检查一次任务
                         if (executor.isShutdown() || executor.isTerminated()) {
                             continue;
                         }
@@ -728,14 +721,14 @@ public class ClientWorker implements Closeable {
 
                     //check local listeners consistent.
                     if (cache.isSyncWithServer()) {
-                        cache.checkListenerMd5();
+                        cache.checkListenerMd5();//如果md5改变，那就说明值变了， 就唤醒！
                         if (!needAllSync) {
                             continue;
                         }
                     }
 
                     if (!CollectionUtils.isEmpty(cache.getListeners())) {
-                        //get listen  config
+                        //get listen  config；cache有监听器
                         if (!cache.isUseLocalConfigInfo()) {
                             List<CacheData> cacheDatas = listenCachesMap.get(String.valueOf(cache.getTaskId()));
                             if (cacheDatas == null) {
@@ -774,13 +767,13 @@ public class ClientWorker implements Closeable {
                                 cacheData.getLastModifiedTs().longValue());
                     }
 
-                    //req config changes
+                    //req config changes;真正唤醒监听器走的是这里；这里是请求，会附带md5
                     ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(listenCaches);
                     configChangeListenRequest.setListen(true);
                     try {
                         RpcClient rpcClient = ensureRpcClient(taskId);
                         ConfigChangeBatchListenResponse configChangeBatchListenResponse = (ConfigChangeBatchListenResponse) requestProxy(
-                                rpcClient, configChangeListenRequest);
+                                rpcClient, configChangeListenRequest);//获得发生改变的config，也不包含内容。。
                         if (configChangeBatchListenResponse != null && configChangeBatchListenResponse.isSuccess()) {
 
                             Set<String> changeKeys = new HashSet<>();

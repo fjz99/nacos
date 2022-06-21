@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Properties;
 
 public class ClientWorkerTest {
-    
+
     @Test
     public void testConstruct() throws NacosException {
         Properties prop = new Properties();
@@ -39,7 +39,35 @@ public class ClientWorkerTest {
         ClientWorker clientWorker = new ClientWorker(filter, agent, prop);
         Assert.assertNotNull(clientWorker);
     }
-    
+
+    @Test
+    public void testAddListenerWithoutTenant22() throws NacosException {
+        Properties prop = new Properties();
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ClientWorker clientWorker = new ClientWorker(filter, agent, prop);
+        String dataId = "a";
+        String group = "b";
+
+        Listener listener = new AbstractListener() {
+            @Override
+            public void receiveConfigInfo(String configInfo) {
+            }
+        };
+
+        clientWorker.addListeners(dataId, group, Arrays.asList(listener));
+        List<Listener> listeners = clientWorker.getCache(dataId, group).getListeners();
+        Assert.assertEquals(1, listeners.size());
+        Assert.assertEquals(listener, listeners.get(0));
+
+        clientWorker.removeListener(dataId, group, listener);
+        listeners = clientWorker.getCache(dataId, group).getListeners();
+        Assert.assertEquals(0, listeners.size());
+
+        CacheData cacheData = clientWorker.addCacheDataIfAbsent(dataId, group);
+        Assert.assertEquals(cacheData, clientWorker.getCache(dataId, group));
+    }
+
     @Test
     public void testAddListenerWithoutTenant() throws NacosException {
         Properties prop = new Properties();
@@ -48,70 +76,54 @@ public class ClientWorkerTest {
         ClientWorker clientWorker = new ClientWorker(filter, agent, prop);
         String dataId = "a";
         String group = "b";
-        
+
         Listener listener = new AbstractListener() {
             @Override
             public void receiveConfigInfo(String configInfo) {
             }
         };
-        
+
         clientWorker.addListeners(dataId, group, Arrays.asList(listener));
         List<Listener> listeners = clientWorker.getCache(dataId, group).getListeners();
         Assert.assertEquals(1, listeners.size());
         Assert.assertEquals(listener, listeners.get(0));
-        
+
         clientWorker.removeListener(dataId, group, listener);
         listeners = clientWorker.getCache(dataId, group).getListeners();
         Assert.assertEquals(0, listeners.size());
-        
+
         CacheData cacheData = clientWorker.addCacheDataIfAbsent(dataId, group);
         Assert.assertEquals(cacheData, clientWorker.getCache(dataId, group));
     }
-    
+
     @Test
     public void testListenerWithTenant() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ServerListManager agent = new ServerListManager ("localhost",8848);
         ClientWorker clientWorker = new ClientWorker(filter, agent, prop);
-        
+
         Listener listener = new AbstractListener() {
             @Override
             public void receiveConfigInfo(String configInfo) {
+                System.out.println ("fuck !"+configInfo);
             }
         };
-        
+
         String dataId = "a";
         String group = "b";
-        
+
         clientWorker.addTenantListeners(dataId, group, Arrays.asList(listener));
         List<Listener> listeners = clientWorker.getCache(dataId, group).getListeners();
         Assert.assertEquals(1, listeners.size());
         Assert.assertEquals(listener, listeners.get(0));
-        
+
         clientWorker.removeTenantListener(dataId, group, listener);
         listeners = clientWorker.getCache(dataId, group).getListeners();
         Assert.assertEquals(0, listeners.size());
-        
-        String content = "d";
-        clientWorker.addTenantListenersWithContent(dataId, group, content, Arrays.asList(listener));
-        listeners = clientWorker.getCache(dataId, group).getListeners();
-        Assert.assertEquals(1, listeners.size());
-        Assert.assertEquals(listener, listeners.get(0));
-        
-        clientWorker.removeTenantListener(dataId, group, listener);
-        listeners = clientWorker.getCache(dataId, group).getListeners();
-        Assert.assertEquals(0, listeners.size());
-        
-        String tenant = "c";
-        CacheData cacheData = clientWorker.addCacheDataIfAbsent(dataId, group, tenant);
-        Assert.assertEquals(cacheData, clientWorker.getCache(dataId, group, tenant));
-        
-        clientWorker.removeCache(dataId, group, tenant);
-        Assert.assertNull(clientWorker.getCache(dataId, group, tenant));
-        
+
     }
-    
+
     @Test
     public void testPublishConfig() throws NacosException {
         Properties prop = new Properties();
@@ -119,20 +131,20 @@ public class ClientWorkerTest {
         ServerListManager agent = Mockito.mock(ServerListManager.class);
         ClientWorker clientWorker = new ClientWorker(filter, agent, prop);
         ClientWorker.ConfigRpcTransportClient mockClient = Mockito.mock(ClientWorker.ConfigRpcTransportClient.class);
-        
+
         String dataId = "a";
         String group = "b";
         String tenant = "c";
         String content = "d";
-        
+
         String appName = "app";
         String tag = "tag";
-        
+
         String betaIps = "1.1.1.1";
         String casMd5 = "1111";
-        
+
         String type = "properties";
-        
+
         boolean b = clientWorker
                 .publishConfig(dataId, group, tenant, appName, tag, betaIps, content, null, casMd5, type);
         Assert.assertFalse(b);
@@ -142,7 +154,7 @@ public class ClientWorkerTest {
         } catch (NacosException e) {
             Assert.assertEquals("Client not connected, current status:STARTING", e.getErrMsg());
             Assert.assertEquals(-401, e.getErrCode());
-            
+
         }
         try {
             clientWorker.getServerConfig(dataId, group, tenant, 100, false);
@@ -152,7 +164,7 @@ public class ClientWorkerTest {
             Assert.assertEquals(-401, e.getErrCode());
         }
     }
-    
+
     @Test
     public void testShutdown() throws NacosException, NoSuchFieldException, IllegalAccessException {
         Properties prop = new Properties();
@@ -164,15 +176,15 @@ public class ClientWorkerTest {
         String tenant = "c";
         String content = "d";
         clientWorker.shutdown();
-        
+
         Field agent1 = ClientWorker.class.getDeclaredField("agent");
         agent1.setAccessible(true);
         ConfigTransportClient o = (ConfigTransportClient) agent1.get(clientWorker);
         Assert.assertTrue(o.executor.isShutdown());
         agent1.setAccessible(false);
-        
+
         Assert.assertTrue(clientWorker.isHealthServer());
         Assert.assertEquals(null, clientWorker.getAgentName());
     }
-    
+
 }

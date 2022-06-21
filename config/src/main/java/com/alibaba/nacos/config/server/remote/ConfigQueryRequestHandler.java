@@ -59,28 +59,28 @@ import static com.alibaba.nacos.config.server.utils.RequestUtil.CLIENT_APPNAME_H
  */
 @Component
 public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest, ConfigQueryResponse> {
-    
+
     private static final int TRY_GET_LOCK_TIMES = 9;
-    
+
     private final PersistService persistService;
-    
+
     public ConfigQueryRequestHandler(PersistService persistService) {
         this.persistService = persistService;
     }
-    
+
     @Override
     @TpsControl(pointName = "ConfigQuery", parsers = {ConfigQueryGroupKeyParser.class, ConfigQueryGroupParser.class})
     @Secured(action = ActionTypes.READ, signType = SignType.CONFIG)
     public ConfigQueryResponse handle(ConfigQueryRequest request, RequestMeta meta) throws NacosException {
-        
+
         try {
             return getContext(request, meta, request.isNotify());
         } catch (Exception e) {
             return ConfigQueryResponse.buildFailResponse(ResponseCode.FAIL.getCode(), e.getMessage());
         }
-        
+
     }
-    
+
     private ConfigQueryResponse getContext(ConfigQueryRequest configQueryRequest, RequestMeta meta, boolean notify)
             throws UnsupportedEncodingException {
         String dataId = configQueryRequest.getDataId();
@@ -89,16 +89,16 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
         String clientIp = meta.getClientIp();
         String tag = configQueryRequest.getTag();
         ConfigQueryResponse response = new ConfigQueryResponse();
-        
+
         final String groupKey = GroupKey2
                 .getKey(configQueryRequest.getDataId(), configQueryRequest.getGroup(), configQueryRequest.getTenant());
-        
+
         String autoTag = configQueryRequest.getHeader(com.alibaba.nacos.api.common.Constants.VIPSERVER_TAG);
-        
+
         String requestIpApp = meta.getLabels().get(CLIENT_APPNAME_HEADER);
-        
+
         int lockResult = tryConfigReadLock(groupKey);
-        
+
         boolean isBeta = false;
         boolean isSli = false;
         if (lockResult > 0) {
@@ -145,11 +145,12 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                                 file = DiskUtil.targetTagFile(dataId, group, tenant, autoTag);
                             }
                             response.setTag(URLEncoder.encode(autoTag, Constants.ENCODE));
-                            
+
                         } else {
                             md5 = cacheItem.getMd5();
                             lastModified = cacheItem.getLastModifiedTs();
                             if (PropertyUtil.isDirectRead()) {
+                                //!!!查找config
                                 configInfoBase = persistService.findConfigInfo(dataId, group, tenant);
                             } else {
                                 file = DiskUtil.targetFile(dataId, group, tenant);
@@ -159,11 +160,11 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                                 // No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
                                 ConfigTraceService.logPullEvent(dataId, group, tenant, requestIpApp, -1,
                                         ConfigTraceService.PULL_EVENT_NOTFOUND, -1, clientIp, false);
-                                
+
                                 // pullLog.info("[client-get] clientIp={}, {},
                                 // no data",
                                 // new Object[]{clientIp, groupKey});
-                                
+
                                 response.setErrorInfo(ConfigQueryResponse.CONFIG_NOT_FOUND, "config data not exist");
                                 return response;
                             }
@@ -190,26 +191,26 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                             // No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
                             ConfigTraceService.logPullEvent(dataId, group, tenant, requestIpApp, -1,
                                     ConfigTraceService.PULL_EVENT_NOTFOUND, -1, clientIp, false);
-                            
+
                             // pullLog.info("[client-get] clientIp={}, {},
                             // no data",
                             // new Object[]{clientIp, groupKey});
-                            
+
                             response.setErrorInfo(ConfigQueryResponse.CONFIG_NOT_FOUND, "config data not exist");
                             return response;
-                            
+
                         }
                     }
                 }
-                
+
                 response.setMd5(md5);
-                
+
                 if (PropertyUtil.isDirectRead()) {
                     response.setLastModified(lastModified);
                     response.setContent(configInfoBase.getContent());
                     response.setEncryptedDataKey(configInfoBase.getEncryptedDataKey());
                     response.setResultCode(ResponseCode.SUCCESS.getCode());
-                    
+
                 } else {
                     //read from file
                     String content = null;
@@ -227,13 +228,13 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                         response.setErrorInfo(ResponseCode.FAIL.getCode(), e.getMessage());
                         return response;
                     }
-                    
+
                 }
-                
+
                 LogUtil.PULL_CHECK_LOG.warn("{}|{}|{}|{}", groupKey, clientIp, md5, TimeUtils.getCurrentTimeStr());
-                
+
                 final long delayed = System.currentTimeMillis() - lastModified;
-                
+
                 // TODO distinguish pull-get && push-get
                 /*
                  Otherwise, delayed cannot be used as the basis of push delay directly,
@@ -241,18 +242,18 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                  */
                 ConfigTraceService.logPullEvent(dataId, group, tenant, requestIpApp, lastModified,
                         ConfigTraceService.PULL_EVENT_OK, notify ? delayed : -1, clientIp, notify);
-                
+
             } finally {
                 releaseConfigReadLock(groupKey);
             }
         } else if (lockResult == 0) {
-            
+
             // FIXME CacheItem No longer exists. It is impossible to simply calculate the push delayed. Here, simply record it as - 1.
             ConfigTraceService
                     .logPullEvent(dataId, group, tenant, requestIpApp, -1, ConfigTraceService.PULL_EVENT_NOTFOUND, -1,
                             clientIp, notify);
             response.setErrorInfo(ConfigQueryResponse.CONFIG_NOT_FOUND, "config data not exist");
-            
+
         } else {
             PULL_LOG.info("[client-get] clientIp={}, {}, get data during dump", clientIp, groupKey);
             response.setErrorInfo(ConfigQueryResponse.CONFIG_QUERY_CONFLICT,
@@ -260,7 +261,7 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
         }
         return response;
     }
-    
+
     /**
      * read content.
      *
@@ -269,36 +270,36 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
      */
     public static String readFileContent(File file) throws IOException {
         return FileUtils.readFileToString(file, ENCODE);
-        
+
     }
-    
+
     private static void releaseConfigReadLock(String groupKey) {
         ConfigCacheService.releaseReadLock(groupKey);
     }
-    
+
     private static boolean fileNotExist(File file) {
         return file == null || !file.exists();
     }
-    
+
     private static int tryConfigReadLock(String groupKey) {
-        
+
         // Lock failed by default.
         int lockResult = -1;
-        
+
         // Try to get lock times, max value: 10;
         for (int i = TRY_GET_LOCK_TIMES; i >= 0; --i) {
             lockResult = ConfigCacheService.tryReadLock(groupKey);
-            
+
             // The data is non-existent.
             if (0 == lockResult) {
                 break;
             }
-            
+
             // Success
             if (lockResult > 0) {
                 break;
             }
-            
+
             // Retry.
             if (i > 0) {
                 try {
@@ -308,15 +309,15 @@ public class ConfigQueryRequestHandler extends RequestHandler<ConfigQueryRequest
                 }
             }
         }
-        
+
         return lockResult;
     }
-    
+
     private static boolean isUseTag(CacheItem cacheItem, String tag) {
         if (cacheItem != null && cacheItem.tagMd5 != null && cacheItem.tagMd5.size() > 0) {
             return StringUtils.isNotBlank(tag) && cacheItem.tagMd5.containsKey(tag);
         }
         return false;
     }
-    
+
 }

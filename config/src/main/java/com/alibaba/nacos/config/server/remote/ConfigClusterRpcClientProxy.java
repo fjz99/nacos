@@ -31,13 +31,13 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ConfigClusterRpcClientProxy {
-    
+
     final ClusterRpcClientProxy clusterRpcClientProxy;
-    
+
     public ConfigClusterRpcClientProxy(ClusterRpcClientProxy clusterRpcClientProxy) {
         this.clusterRpcClientProxy = clusterRpcClientProxy;
     }
-    
+
     /**
      * sync config change request.
      *
@@ -48,8 +48,9 @@ public class ConfigClusterRpcClientProxy {
      */
     public void syncConfigChange(Member member, ConfigChangeClusterSyncRequest request, RequestCallBack callBack)
             throws NacosException {
-    
+
+        //仅仅是发起一个异步请求而已
         clusterRpcClientProxy.asyncRequest(member, request, callBack);
-        
+
     }
 }

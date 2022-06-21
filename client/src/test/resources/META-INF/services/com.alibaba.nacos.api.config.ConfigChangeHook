@@ -1,0 +1,3 @@
+com.alibaba.nacos.client.config.hook.CheckFileNameHook
+com.alibaba.nacos.client.config.hook.CheckContentHook
+com.alibaba.nacos.client.config.hook.SendEmailWebHook

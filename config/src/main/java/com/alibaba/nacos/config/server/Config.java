@@ -30,7 +30,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.alibaba.nacos.config.server",
         "com.alibaba.nacos.core"})
 public class Config {
-    
+
     public static void main(String[] args) {
         SpringApplication.run(Config.class, args);
     }

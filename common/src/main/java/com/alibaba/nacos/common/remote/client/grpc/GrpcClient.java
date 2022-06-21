@@ -55,33 +55,33 @@ import java.util.concurrent.TimeUnit;
  */
 @SuppressWarnings("PMD.AbstractClassShouldStartWithAbstractNamingRule")
 public abstract class GrpcClient extends RpcClient {
-    
+
     static final Logger LOGGER = LoggerFactory.getLogger(GrpcClient.class);
-    
+
     protected static final String NACOS_SERVER_GRPC_PORT_OFFSET_KEY = "nacos.server.grpc.port.offset";
-    
+
     private ThreadPoolExecutor grpcExecutor = null;
-    
+
     private Integer threadPoolCoreSize;
-    
+
     private Integer threadPoolMaxSize;
-    
+
     private static final long DEFAULT_MAX_INBOUND_MESSAGE_SIZE = 10 * 1024 * 1024L;
-    
+
     private static final long DEFAULT_KEEP_ALIVE_TIME = 6 * 60 * 1000;
-    
+
     @Override
     public ConnectionType getConnectionType() {
         return ConnectionType.GRPC;
     }
-    
+
     /**
      * Empty constructor.
      */
     public GrpcClient(String name) {
         super(name);
     }
-    
+
     /**
      * Set core size of thread pool.
      *
@@ -90,7 +90,7 @@ public abstract class GrpcClient extends RpcClient {
     public void setThreadPoolCoreSize(Integer threadPoolCoreSize) {
         this.threadPoolCoreSize = threadPoolCoreSize;
     }
-    
+
     /**
      * Set max size of thread pool.
      *
@@ -99,15 +99,15 @@ public abstract class GrpcClient extends RpcClient {
     public void setThreadPoolMaxSize(Integer threadPoolMaxSize) {
         this.threadPoolMaxSize = threadPoolMaxSize;
     }
-    
+
     protected Integer getThreadPoolCoreSize() {
         return threadPoolCoreSize != null ? threadPoolCoreSize : ThreadUtils.getSuitableThreadCount(2);
     }
-    
+
     protected Integer getThreadPoolMaxSize() {
         return threadPoolMaxSize != null ? threadPoolMaxSize : ThreadUtils.getSuitableThreadCount(8);
     }
-    
+
     protected ThreadPoolExecutor createGrpcExecutor(String serverIp) {
         ThreadPoolExecutor grpcExecutor = new ThreadPoolExecutor(
                 getThreadPoolCoreSize(),
@@ -121,7 +121,7 @@ public abstract class GrpcClient extends RpcClient {
         grpcExecutor.allowCoreThreadTimeOut(true);
         return grpcExecutor;
     }
-    
+
     @Override
     public void shutdown() throws NacosException {
         super.shutdown();
@@ -154,19 +154,19 @@ public abstract class GrpcClient extends RpcClient {
                 .maxInboundMessageSize(getInboundMessageSize()).keepAliveTime(keepAliveTimeMillis(), TimeUnit.MILLISECONDS).usePlaintext();
         return managedChannelBuilder.build();
     }
-    
+
     private int getInboundMessageSize() {
         String messageSize = System.getProperty("nacos.remote.client.grpc.maxinbound.message.size",
                 String.valueOf(DEFAULT_MAX_INBOUND_MESSAGE_SIZE));
         return Integer.parseInt(messageSize);
     }
-    
+
     private int keepAliveTimeMillis() {
         String keepAliveTimeMillis = System
                 .getProperty("nacos.remote.grpc.keep.alive.millis", String.valueOf(DEFAULT_KEEP_ALIVE_TIME));
         return Integer.parseInt(keepAliveTimeMillis);
     }
-    
+
     /**
      * shutdown a  channel.
      *
@@ -177,7 +177,7 @@ public abstract class GrpcClient extends RpcClient {
             managedChannel.shutdownNow();
         }
     }
-    
+
     /**
      * check server if success.
      *
@@ -201,22 +201,22 @@ public abstract class GrpcClient extends RpcClient {
             return null;
         }
     }
-    
+
     private StreamObserver<Payload> bindRequestStream(final BiRequestStreamGrpc.BiRequestStreamStub streamStub,
             final GrpcConnection grpcConn) {
-        
+
         return streamStub.requestBiStream(new StreamObserver<Payload>() {
-            
+
             @Override
             public void onNext(Payload payload) {
-                
+
                 LoggerUtils.printIfDebugEnabled(LOGGER, "[{}]Stream server request receive, original info: {}",
                         grpcConn.getConnectionId(), payload.toString());
                 try {
                     Object parseBody = GrpcUtils.parse(payload);
                     final Request request = (Request) parseBody;
                     if (request != null) {
-                        
+
                         try {
                             Response response = handleServerRequest(request);
                             if (response != null) {
@@ -226,7 +226,7 @@ public abstract class GrpcClient extends RpcClient {
                                 LOGGER.warn("[{}]Fail to process server request, ackId->{}", grpcConn.getConnectionId(),
                                         request.getRequestId());
                             }
-                            
+
                         } catch (Exception e) {
                             LoggerUtils.printIfErrorEnabled(LOGGER, "[{}]Handle server request exception: {}",
                                     grpcConn.getConnectionId(), payload.toString(), e.getMessage());
@@ -235,16 +235,16 @@ public abstract class GrpcClient extends RpcClient {
                             errResponse.setRequestId(request.getRequestId());
                             sendResponse(errResponse);
                         }
-                        
+
                     }
-                    
+
                 } catch (Exception e) {
-                    
+
                     LoggerUtils.printIfErrorEnabled(LOGGER, "[{}]Error to process server push response: {}",
                             grpcConn.getConnectionId(), payload.getBody().getValue().toStringUtf8());
                 }
             }
-            
+
             @Override
             public void onError(Throwable throwable) {
                 boolean isRunning = isRunning();
@@ -255,14 +255,14 @@ public abstract class GrpcClient extends RpcClient {
                     if (rpcClientStatus.compareAndSet(RpcClientStatus.RUNNING, RpcClientStatus.UNHEALTHY)) {
                         switchServerAsync();
                     }
-                    
+
                 } else {
                     LoggerUtils.printIfWarnEnabled(LOGGER, "[{}]Ignore error event,isRunning:{},isAbandon={}",
                             grpcConn.getConnectionId(), isRunning, isAbandon);
                 }
-                
+
             }
-            
+
             @Override
             public void onCompleted() {
                 boolean isRunning = isRunning();
@@ -273,16 +273,16 @@ public abstract class GrpcClient extends RpcClient {
                     if (rpcClientStatus.compareAndSet(RpcClientStatus.RUNNING, RpcClientStatus.UNHEALTHY)) {
                         switchServerAsync();
                     }
-                    
+
                 } else {
                     LoggerUtils.printIfInfoEnabled(LOGGER, "[{}]Ignore complete event,isRunning:{},isAbandon={}",
                             grpcConn.getConnectionId(), isRunning, isAbandon);
                 }
-                
+
             }
         });
     }
-    
+
     private void sendResponse(Response response) {
         try {
             ((GrpcConnection) this.currentConnection).sendResponse(response);
@@ -291,7 +291,7 @@ public abstract class GrpcClient extends RpcClient {
                     response.getRequestId());
         }
     }
-    
+
     @Override
     public Connection connectToServer(ServerInfo serverInfo) {
         try {
@@ -302,21 +302,21 @@ public abstract class GrpcClient extends RpcClient {
             ManagedChannel managedChannel = createNewManagedChannel(serverInfo.getServerIp(), port);
             RequestGrpc.RequestFutureStub newChannelStubTemp = createNewChannelStub(managedChannel);
             if (newChannelStubTemp != null) {
-                
+
                 Response response = serverCheck(serverInfo.getServerIp(), port, newChannelStubTemp);
                 if (response == null || !(response instanceof ServerCheckResponse)) {
                     shuntDownChannel(managedChannel);
                     return null;
                 }
-                
+
                 BiRequestStreamGrpc.BiRequestStreamStub biRequestStreamStub = BiRequestStreamGrpc
                         .newStub(newChannelStubTemp.getChannel());
                 GrpcConnection grpcConn = new GrpcConnection(serverInfo, grpcExecutor);
                 grpcConn.setConnectionId(((ServerCheckResponse) response).getConnectionId());
-                
+
                 //create stream request and bind connection event to this connection.
                 StreamObserver<Payload> payloadStreamObserver = bindRequestStream(biRequestStreamStub, grpcConn);
-                
+
                 // stream observer to send response to server
                 grpcConn.setPayloadStreamObserver(payloadStreamObserver);
                 grpcConn.setGrpcFutureServiceStub(newChannelStubTemp);
@@ -334,11 +334,12 @@ public abstract class GrpcClient extends RpcClient {
             }
             return null;
         } catch (Exception e) {
+            e.printStackTrace ();
             LOGGER.error("[{}]Fail to connect to server!,error={}", GrpcClient.this.getName(), e);
         }
         return null;
     }
-    
+
 }
 
 
